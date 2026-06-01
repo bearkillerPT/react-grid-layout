@@ -1040,6 +1040,314 @@ describe("Lifecycle tests", function () {
         consoleError.mockRestore();
       });
 
+      it("does not restore dropping placeholder from a pending drag after drag leave", async function () {
+        const onDragOver = jest.fn(() => ({ w: 2, h: 2 }));
+        const onDrag = jest.fn();
+
+        const { container } = render(
+          <GridLayoutV2
+            className="layout"
+            gridConfig={{ cols: 12, rowHeight: 30 }}
+            width={1200}
+            layout={[{ i: "a", x: 0, y: 0, w: 2, h: 2 }]}
+            dropConfig={{ enabled: true, onDragOver }}
+            onDrag={onDrag}
+          >
+            <div key="a">a</div>
+          </GridLayoutV2>
+        );
+
+        const grid = container.querySelector(".react-grid-layout");
+
+        act(() => {
+          TestUtils.Simulate.dragEnter(grid, {
+            clientX: 200,
+            clientY: 100
+          });
+          TestUtils.Simulate.dragOver(grid, {
+            currentTarget: {
+              getBoundingClientRect: () => ({ left: 0, top: 0 })
+            },
+            clientX: 200,
+            clientY: 100,
+            nativeEvent: {
+              target: document.createElement("div")
+            }
+          });
+        });
+
+        expect(
+          container.querySelectorAll(".react-grid-item").length
+        ).toBeGreaterThanOrEqual(2);
+
+        act(() => {
+          TestUtils.Simulate.dragOver(grid, {
+            currentTarget: {
+              getBoundingClientRect: () => ({ left: 0, top: 0 })
+            },
+            clientX: 260,
+            clientY: 160,
+            nativeEvent: {
+              target: document.createElement("div")
+            }
+          });
+          TestUtils.Simulate.dragLeave(grid, {
+            clientX: -100,
+            clientY: -100
+          });
+        });
+
+        await act(async () => {});
+
+        expect(container.querySelectorAll(".react-grid-item")).toHaveLength(1);
+        expect(container.querySelector(".react-grid-placeholder")).toBeNull();
+      });
+
+      it("recreates dropping placeholder after dragging out and back in", async function () {
+        const onDragOver = jest.fn(() => ({ w: 2, h: 2 }));
+        const onDrop = jest.fn();
+
+        const { container } = render(
+          <GridLayoutV2
+            className="layout"
+            gridConfig={{ cols: 12, rowHeight: 30 }}
+            width={1200}
+            layout={[{ i: "a", x: 0, y: 0, w: 2, h: 2 }]}
+            dropConfig={{ enabled: true, onDragOver }}
+            onDrop={onDrop}
+          >
+            <div key="a">a</div>
+          </GridLayoutV2>
+        );
+
+        const grid = container.querySelector(".react-grid-layout");
+
+        const dragOver = (clientX, clientY) => {
+          TestUtils.Simulate.dragOver(grid, {
+            currentTarget: {
+              getBoundingClientRect: () => ({ left: 0, top: 0 })
+            },
+            clientX,
+            clientY,
+            nativeEvent: {
+              target: document.createElement("div")
+            }
+          });
+        };
+
+        act(() => {
+          TestUtils.Simulate.dragEnter(grid, {
+            clientX: 200,
+            clientY: 100
+          });
+          dragOver(200, 100);
+        });
+
+        expect(
+          container.querySelectorAll(".react-grid-item").length
+        ).toBeGreaterThanOrEqual(2);
+
+        act(() => {
+          TestUtils.Simulate.dragLeave(grid, {
+            clientX: -100,
+            clientY: -100
+          });
+          TestUtils.Simulate.dragEnter(grid, {
+            clientX: 260,
+            clientY: 160
+          });
+          dragOver(260, 160);
+        });
+
+        await act(async () => {});
+
+        expect(
+          container.querySelectorAll(".react-grid-item").length
+        ).toBeGreaterThanOrEqual(2);
+
+        act(() => {
+          TestUtils.Simulate.drop(grid, {
+            clientX: 260,
+            clientY: 160
+          });
+        });
+
+        expect(onDrop).toHaveBeenCalledTimes(1);
+        expect(onDrop.mock.calls[0][1]).toEqual(
+          expect.objectContaining({
+            i: "__dropping-elem__",
+            w: 2,
+            h: 2
+          })
+        );
+      });
+
+      it("recreates dropping placeholder after dragging out and back in with legacy API", async function () {
+        const onDropDragOver = jest.fn(() => ({ w: 2, h: 2 }));
+        const onDrop = jest.fn();
+
+        const { container } = render(
+          <ReactGridLayout
+            className="layout"
+            cols={12}
+            rowHeight={30}
+            width={1200}
+            isDroppable={true}
+            onDropDragOver={onDropDragOver}
+            onDrop={onDrop}
+          >
+            <div key="a" data-grid={{ x: 0, y: 0, w: 2, h: 2 }}>
+              a
+            </div>
+          </ReactGridLayout>
+        );
+
+        const grid = container.querySelector(".react-grid-layout");
+
+        const dragOver = (clientX, clientY) => {
+          TestUtils.Simulate.dragOver(grid, {
+            currentTarget: {
+              getBoundingClientRect: () => ({ left: 0, top: 0 })
+            },
+            clientX,
+            clientY,
+            nativeEvent: {
+              target: document.createElement("div")
+            }
+          });
+        };
+
+        act(() => {
+          TestUtils.Simulate.dragEnter(grid, {
+            clientX: 200,
+            clientY: 100
+          });
+          dragOver(200, 100);
+        });
+
+        expect(
+          container.querySelectorAll(".react-grid-item").length
+        ).toBeGreaterThanOrEqual(2);
+
+        act(() => {
+          TestUtils.Simulate.dragLeave(grid, {
+            clientX: -100,
+            clientY: -100
+          });
+          TestUtils.Simulate.dragEnter(grid, {
+            clientX: 260,
+            clientY: 160
+          });
+          dragOver(260, 160);
+        });
+
+        await act(async () => {});
+
+        expect(
+          container.querySelectorAll(".react-grid-item").length
+        ).toBeGreaterThanOrEqual(2);
+
+        act(() => {
+          TestUtils.Simulate.drop(grid, {
+            clientX: 260,
+            clientY: 160
+          });
+        });
+
+        expect(onDrop).toHaveBeenCalledTimes(1);
+        expect(onDrop.mock.calls[0][1]).toEqual(
+          expect.objectContaining({
+            i: "__dropping-elem__",
+            w: 2,
+            h: 2
+          })
+        );
+      });
+
+      it("keeps the last valid drop position when preventCollision blocks the hovered cell", async function () {
+        const onDropDragOver = jest.fn(() => ({ w: 2, h: 2 }));
+        const onDrop = jest.fn();
+
+        const { container } = render(
+          <ReactGridLayout
+            className="layout"
+            cols={12}
+            rowHeight={30}
+            width={1200}
+            isDroppable={true}
+            preventCollision={true}
+            onDropDragOver={onDropDragOver}
+            onDrop={onDrop}
+          >
+            <div key="a" data-grid={{ x: 0, y: 0, w: 2, h: 2 }}>
+              a
+            </div>
+          </ReactGridLayout>
+        );
+
+        const grid = container.querySelector(".react-grid-layout");
+
+        const dragOver = (clientX, clientY) => {
+          TestUtils.Simulate.dragOver(grid, {
+            currentTarget: {
+              getBoundingClientRect: () => ({ left: 0, top: 0 })
+            },
+            clientX,
+            clientY,
+            nativeEvent: {
+              target: document.createElement("div")
+            }
+          });
+        };
+
+        act(() => {
+          TestUtils.Simulate.dragEnter(grid, {
+            clientX: 300,
+            clientY: 200
+          });
+          dragOver(300, 200);
+        });
+
+        await act(async () => {});
+
+        expect(
+          container.querySelectorAll(".react-grid-item").length
+        ).toBeGreaterThanOrEqual(2);
+
+        act(() => {
+          dragOver(200, 100);
+        });
+
+        await act(async () => {});
+
+        expect(
+          container.querySelectorAll(".react-grid-item").length
+        ).toBeGreaterThanOrEqual(2);
+
+        act(() => {
+          TestUtils.Simulate.drop(grid, {
+            clientX: 200,
+            clientY: 100
+          });
+        });
+
+        expect(onDrop).toHaveBeenCalledTimes(1);
+        const droppedItem = onDrop.mock.calls[0][1];
+        expect(droppedItem).toEqual(
+          expect.objectContaining({
+            i: "__dropping-elem__",
+            w: 2,
+            h: 2
+          })
+        );
+        expect(
+          droppedItem.x < 2 &&
+            droppedItem.x + droppedItem.w > 0 &&
+            droppedItem.y < 2 &&
+            droppedItem.y + droppedItem.h > 0
+        ).toBe(false);
+      });
+
       // #2210 - Test with v2 API GridLayout directly
       it("does not cause Maximum update depth exceeded with v2 API GridLayout (#2210)", function () {
         const consoleError = jest

@@ -409,6 +409,7 @@ export function GridLayout(props: GridLayoutProps): ReactElement {
   const oldResizeItemRef = useRef<LayoutItem | null>(null);
   const oldLayoutRef = useRef<Layout | null>(null);
   const dragEnterCounterRef = useRef(0);
+  const activeDroppingEventRef = useRef<Event | null>(null);
   const prevLayoutRef = useRef<Layout>(layout);
   const prevPropsLayoutRef = useRef<Layout>(propsLayout);
   const prevChildrenRef = useRef<React.ReactNode>(children);
@@ -501,8 +502,16 @@ export function GridLayout(props: GridLayoutProps): ReactElement {
   // Drag Handlers
   // ============================================================================
 
+  const isStaleDroppingDrag = useCallback(
+    (i: string, e: Event): boolean =>
+      i === droppingItem.i && activeDroppingEventRef.current !== e,
+    [droppingItem.i]
+  );
+
   const onDragStart = useCallback(
     (i: string, _x: number, _y: number, data: GridDragEvent) => {
+      if (isStaleDroppingDrag(i, data.e)) return;
+
       const currentLayout = layoutRef.current;
       const l = getLayoutItem(currentLayout, i);
       if (!l) return;
@@ -521,7 +530,7 @@ export function GridLayout(props: GridLayoutProps): ReactElement {
 
       onDragStartProp(currentLayout, l, l, null, data.e, data.node);
     },
-    [onDragStartProp]
+    [isStaleDroppingDrag, onDragStartProp]
   );
 
   const onDrag = useCallback(
@@ -763,6 +772,8 @@ export function GridLayout(props: GridLayoutProps): ReactElement {
   // ============================================================================
 
   const removeDroppingPlaceholder = useCallback(() => {
+    activeDroppingEventRef.current = null;
+
     // Guard against being called when there's no dropping item (#2210)
     // This makes the function idempotent and safe to call multiple times
     const currentLayout = layoutRef.current;
@@ -781,6 +792,7 @@ export function GridLayout(props: GridLayoutProps): ReactElement {
       cols
     );
 
+    layoutRef.current = newLayout;
     setLayout(newLayout);
     setDroppingDOMNode(null);
     setActiveDrag(null);
@@ -808,9 +820,7 @@ export function GridLayout(props: GridLayoutProps): ReactElement {
         ? dropConfigOnDragOver(e.nativeEvent as DragEvent)
         : onDropDragOverProp(e);
       if (rawResult === false) {
-        if (droppingDOMNode) {
-          removeDroppingPlaceholder();
-        }
+        removeDroppingPlaceholder();
         return false;
       }
       const {
@@ -820,6 +830,10 @@ export function GridLayout(props: GridLayoutProps): ReactElement {
       } = rawResult ?? {};
 
       const finalDroppingItem = { ...droppingItem, ...onDragOverResult };
+      const currentLayout = layoutRef.current;
+      const hasDroppingItem = currentLayout.some(
+        l => l.i === finalDroppingItem.i
+      );
       const gridRect = e.currentTarget.getBoundingClientRect();
 
       // Calculate position params for proper column width calculation
@@ -867,7 +881,7 @@ export function GridLayout(props: GridLayoutProps): ReactElement {
         e: e.nativeEvent
       };
 
-      if (!droppingDOMNode) {
+      if (!droppingDOMNode || !hasDroppingItem) {
         const calculatedPosition = calcXY(
           positionParams,
           clampedGridY,
@@ -875,33 +889,28 @@ export function GridLayout(props: GridLayoutProps): ReactElement {
           finalDroppingItem.w,
           finalDroppingItem.h
         );
-
+        const newDroppingItem = {
+          ...finalDroppingItem,
+          x: calculatedPosition.x,
+          y: calculatedPosition.y,
+          static: false,
+          isDraggable: true
+        };
         setDroppingDOMNode(<div key={finalDroppingItem.i} />);
+        activeDroppingEventRef.current = e.nativeEvent;
         setDroppingPosition(newDroppingPosition);
-        // Filter out any stale __dropping-elem__ before adding the new one.
-        // This prevents duplicate IDs caused by a race condition where
-        // handleDragLeave's removeDroppingPlaceholder() checks layoutRef
-        // before a batched setLayout from a previous handleDragOver has
-        // rendered, leaving __dropping-elem__ in the layout while
-        // droppingDOMNode is null.
-        const baseLayout = layoutRef.current.filter(
+        const baseLayout = currentLayout.filter(
           l => l.i !== finalDroppingItem.i
         );
-        setLayout([
-          ...baseLayout,
-          {
-            ...finalDroppingItem,
-            x: calculatedPosition.x,
-            y: calculatedPosition.y,
-            static: false,
-            isDraggable: true
-          }
-        ]);
+        const newLayout = [...baseLayout, newDroppingItem];
+        layoutRef.current = newLayout;
+        setLayout(newLayout);
       } else if (droppingPosition) {
         const shouldUpdate =
           droppingPosition.left !== newDroppingPosition.left ||
           droppingPosition.top !== newDroppingPosition.top;
         if (shouldUpdate) {
+          activeDroppingEventRef.current = e.nativeEvent;
           setDroppingPosition(newDroppingPosition);
         }
       }
