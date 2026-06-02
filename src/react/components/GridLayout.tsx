@@ -871,9 +871,23 @@ export function GridLayout(props: GridLayoutProps): ReactElement {
       const rawGridY =
         e.clientY - gridRect.top + dragOffsetY - itemCenterOffsetY;
 
-      // Clamp to prevent negative positions (calcXY handles upper bound clamping)
-      const clampedGridX = Math.max(0, rawGridX);
-      const clampedGridY = Math.max(0, rawGridY);
+      // Keep the placeholder inside the visible grid bounds while dragover updates catch up.
+      const maxGridX =
+        Number.isFinite(gridRect.width) && gridRect.width > 0
+          ? Math.max(0, gridRect.width - itemPixelWidth)
+          : undefined;
+      const maxGridY =
+        Number.isFinite(gridRect.height) && gridRect.height > 0
+          ? Math.max(0, gridRect.height - itemPixelHeight)
+          : undefined;
+      const clampedGridX = Math.max(
+        0,
+        maxGridX === undefined ? rawGridX : Math.min(rawGridX, maxGridX)
+      );
+      const clampedGridY = Math.max(
+        0,
+        maxGridY === undefined ? rawGridY : Math.min(rawGridY, maxGridY)
+      );
 
       const newDroppingPosition: DroppingPosition = {
         left: clampedGridX / transformScale,
@@ -881,27 +895,34 @@ export function GridLayout(props: GridLayoutProps): ReactElement {
         e: e.nativeEvent
       };
 
+      const calculatedPosition = calcXY(
+        positionParams,
+        clampedGridY,
+        clampedGridX,
+        finalDroppingItem.w,
+        finalDroppingItem.h
+      );
+      const newDroppingItem = {
+        ...finalDroppingItem,
+        x: calculatedPosition.x,
+        y: calculatedPosition.y,
+        static: false,
+        isDraggable: true
+      };
+      const baseLayout = currentLayout.filter(l => l.i !== finalDroppingItem.i);
+      const hasCollision =
+        preventCollision && !allowOverlap
+          ? getAllCollisions(baseLayout, newDroppingItem).length > 0
+          : false;
+
+      if (hasCollision) {
+        return false;
+      }
+
       if (!droppingDOMNode || !hasDroppingItem) {
-        const calculatedPosition = calcXY(
-          positionParams,
-          clampedGridY,
-          clampedGridX,
-          finalDroppingItem.w,
-          finalDroppingItem.h
-        );
-        const newDroppingItem = {
-          ...finalDroppingItem,
-          x: calculatedPosition.x,
-          y: calculatedPosition.y,
-          static: false,
-          isDraggable: true
-        };
         setDroppingDOMNode(<div key={finalDroppingItem.i} />);
         activeDroppingEventRef.current = e.nativeEvent;
         setDroppingPosition(newDroppingPosition);
-        const baseLayout = currentLayout.filter(
-          l => l.i !== finalDroppingItem.i
-        );
         const newLayout = [...baseLayout, newDroppingItem];
         layoutRef.current = newLayout;
         setLayout(newLayout);
@@ -912,10 +933,15 @@ export function GridLayout(props: GridLayoutProps): ReactElement {
         if (shouldUpdate) {
           activeDroppingEventRef.current = e.nativeEvent;
           setDroppingPosition(newDroppingPosition);
+          const newLayout = [...baseLayout, newDroppingItem];
+          layoutRef.current = newLayout;
+          setLayout(newLayout);
         }
       }
     },
     [
+      allowOverlap,
+      preventCollision,
       droppingDOMNode,
       droppingPosition,
       droppingItem,
